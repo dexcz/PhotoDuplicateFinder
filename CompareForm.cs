@@ -11,6 +11,7 @@ namespace PhotoDuplicateFinder
         public CompareForm(Matches group, string selected)
         {
             Text = "Compare versions";
+            Icon = Program.AppIcon;
             Font = new Font("Segoe UI", 10);
             AutoScaleMode = AutoScaleMode.Dpi;
             StartPosition = FormStartPosition.CenterParent;

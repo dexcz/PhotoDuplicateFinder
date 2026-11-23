@@ -1,5 +1,7 @@
 # Photo Duplicate Finder
 
+<img src="Assets/PhotoDuplicateFinder.png" width="96" height="96" alt="Two overlapping alpine photographs">
+
 A Windows Forms desktop app for finding exact duplicates and visually similar versions of a photograph in a folder.
 
 ## Scan and review

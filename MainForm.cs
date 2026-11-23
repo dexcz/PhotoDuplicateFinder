@@ -36,6 +36,7 @@ namespace PhotoDuplicateFinder
         public MainForm()
         {
             Text = "Photo Duplicate Finder";
+            Icon = Program.AppIcon;
             Font = new Font("Segoe UI", 10);
             AutoScaleMode = AutoScaleMode.Dpi;
             ClientSize = new Size(1040, 600);

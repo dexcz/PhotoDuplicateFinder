@@ -4,6 +4,7 @@
     <Platform Condition="'$(Platform)' == ''">AnyCPU</Platform>
     <ProjectGuid>{E52438E9-F667-4851-A021-6ABF8B4F840B}</ProjectGuid>
     <OutputType>WinExe</OutputType>
+    <ApplicationIcon>Assets\PhotoDuplicateFinder.ico</ApplicationIcon>
     <RootNamespace>PhotoDuplicateFinder</RootNamespace>
     <AssemblyName>PhotoDuplicateFinder</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
@@ -21,6 +22,10 @@
     <Optimize>true</Optimize>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Assets\PhotoDuplicateFinder.ico">
+      <LogicalName>PhotoDuplicateFinder.PhotoDuplicateFinder.ico</LogicalName>
+    </EmbeddedResource>
+    <None Include="Assets\PhotoDuplicateFinder.png" />
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
