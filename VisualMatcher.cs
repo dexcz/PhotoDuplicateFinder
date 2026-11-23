@@ -115,7 +115,7 @@ namespace PhotoDuplicateFinder
     {
         private static int Key(int r, int g, int b) { return (r * 16 + g) * 16 + b; }
 
-        public static List<Matches> Group(List<VisualPhoto> photos, CancellationToken token)
+        public static List<Matches> Group(List<VisualPhoto> photos, CancellationToken token, ScanProgress.Phase progress)
         {
             // Index group representatives by average color. Adjacent bins cover the per-channel tolerance.
             var bins = new Dictionary<int, List<List<VisualPhoto>>>();
@@ -146,6 +146,7 @@ namespace PhotoDuplicateFinder
                     local.Add(group);
                 }
                 group.Add(photo);
+                progress.Advance();
             }
             return bins.Values.SelectMany(bin => bin).Where(g => g.Count > 1)
                 .Select(g => new Matches { Paths = g.Select(p => p.Path).ToList(), Versions = g.ToDictionary(p => p.Path) })

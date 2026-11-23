@@ -41,8 +41,10 @@ namespace PhotoDuplicateFinder
             return ScanFolder(root, recursive, false, token);
         }
 
-        public static ScanResult ScanFolder(string root, bool recursive, bool visual, CancellationToken token)
+        public static ScanResult ScanFolder(string root, bool recursive, bool visual, CancellationToken token, ScanProgress progress = null)
         {
+            progress = progress ?? new ScanProgress();
+            var discovery = progress.Current;
             var result = new ScanResult();
             var bySize = new Dictionary<long, List<string>>();
             var folders = new Stack<DirectoryInfo>();
@@ -71,6 +73,7 @@ namespace PhotoDuplicateFinder
                             long size = ((FileInfo)entry).Length;
                             if (size == 0) continue;
                             result.Photos++;
+                            discovery.Advance();
                             List<string> candidates;
                             if (!bySize.TryGetValue(size, out candidates))
                                 bySize.Add(size, candidates = new List<string>());
@@ -85,6 +88,7 @@ namespace PhotoDuplicateFinder
             var buffer = new byte[128 * 1024];
             if (visual)
             {
+                var reading = progress.Begin("Reading images (1/2)", result.Photos);
                 var photos = new List<VisualPhoto>();
                 foreach (string path in bySize.Values.SelectMany(paths => paths))
                 {
@@ -102,11 +106,14 @@ namespace PhotoDuplicateFinder
                     catch (Exception ex) when (IsFileError(ex) || ex is FormatException || ex is NotSupportedException ||
                         ex is ArgumentException || ex is InvalidOperationException || ex is OverflowException ||
                         ex is System.Runtime.InteropServices.COMException) { result.Skipped++; }
+                    reading.Advance();
                 }
-                result.Groups = VisualMatcher.Group(photos, token);
+                result.Groups = VisualMatcher.Group(photos, token, progress.Begin("Comparing images (2/2)", photos.Count));
                 return result;
             }
-            foreach (var bucket in bySize.Where(p => p.Value.Count > 1))
+            var buckets = bySize.Where(p => p.Value.Count > 1).ToList();
+            var hashing = progress.Begin("Checking exact copies", buckets.Sum(p => p.Value.Count));
+            foreach (var bucket in buckets)
             {
                 var byDigest = new Dictionary<string, List<string>>();
                 foreach (string path in bucket.Value)
@@ -125,6 +132,7 @@ namespace PhotoDuplicateFinder
                         }
                     }
                     catch (Exception ex) when (IsFileError(ex)) { result.Skipped++; }
+                    finally { hashing.Advance(); }
                 }
                 foreach (var pair in byDigest.Where(p => p.Value.Count > 1))
                 {

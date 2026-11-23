@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
@@ -28,6 +29,8 @@ namespace PhotoDuplicateFinder
         private readonly PictureBox picture = new PictureBox { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(241, 244, 248) };
         private readonly Label detail = new Label { Dock = DockStyle.Fill, AutoEllipsis = true };
         private readonly Label status = new Label { AutoSize = true, Anchor = AnchorStyles.Left };
+        private readonly ProgressBar scanBar = new ProgressBar { Dock = DockStyle.Fill, Height = 10, Visible = false,
+            AccessibleName = "Scan progress", MarqueeAnimationSpeed = 35 };
         private readonly Label checkedInfo = new Label { AutoSize = true, Anchor = AnchorStyles.Left };
         private CancellationTokenSource cancellation;
         private bool working, bulk;
@@ -44,10 +47,10 @@ namespace PhotoDuplicateFinder
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Color.White;
 
-            var page = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(15), ColumnCount = 1, RowCount = 7 };
+            var page = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(15), ColumnCount = 1, RowCount = 8 };
             page.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            for (int i = 0; i < 7; i++)
-                page.RowStyles.Add(new RowStyle(i == 4 ? SizeType.Percent : SizeType.AutoSize, i == 4 ? 100 : 0));
+            for (int i = 0; i < page.RowCount; i++)
+                page.RowStyles.Add(new RowStyle(i == 5 ? SizeType.Percent : SizeType.AutoSize, i == 5 ? 100 : 0));
             Controls.Add(page);
             page.Controls.Add(new Label { Text = "Photo Duplicate Finder", AutoSize = true, Font = new Font(Font.FontFamily, 19, FontStyle.Bold) }, 0, 0);
             var location = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, RowCount = 1, ColumnCount = 2 };
@@ -62,6 +65,7 @@ namespace PhotoDuplicateFinder
             mode.SelectedIndex = 0;
             page.Controls.Add(Row(new Label { Text = "Find", AutoSize = true, Anchor = AnchorStyles.Left }, mode, recursive, scan, cancel), 0, 2);
             page.Controls.Add(status, 0, 3);
+            page.Controls.Add(scanBar, 0, 4);
 
             var review = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
             review.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 70));
@@ -80,9 +84,9 @@ namespace PhotoDuplicateFinder
             preview.Controls.Add(picture, 0, 0);
             preview.Controls.Add(detail, 0, 1);
             review.Controls.Add(preview, 1, 0);
-            page.Controls.Add(review, 0, 4);
-            page.Controls.Add(checkedInfo, 0, 5);
-            page.Controls.Add(Row(compare, mark, unmark, recycle), 0, 6);
+            page.Controls.Add(review, 0, 5);
+            page.Controls.Add(checkedInfo, 0, 6);
+            page.Controls.Add(Row(compare, mark, unmark, recycle), 0, 7);
 
             browse.Click += delegate
             {
@@ -163,6 +167,33 @@ namespace PhotoDuplicateFinder
                 SizeText(checkedRows.Sum(r => ((Matches)r.Group.Tag).SizeOf((string)r.Tag))));
         }
 
+        private static string Duration(double seconds)
+        {
+            long total = (long)Math.Ceiling(seconds);
+            if (total >= 3600) return string.Format("{0} h {1} min", total / 3600, total / 60 % 60);
+            if (total >= 60) return string.Format("{0} min {1} s", total / 60, total % 60);
+            return total + " s";
+        }
+
+        private void ShowScanProgress(ScanProgress.Phase phase, TimeSpan elapsed)
+        {
+            int done = phase.Completed;
+            if (phase.Total < 0)
+            {
+                scanBar.Style = ProgressBarStyle.Marquee;
+                status.Text = string.Format("{0}…   {1:N0} found   ·   Elapsed {2}", phase.Name, done, Duration(Math.Floor(elapsed.TotalSeconds)));
+                return;
+            }
+            int percent = phase.Total == 0 ? 100 : (int)(100L * done / phase.Total);
+            scanBar.Style = ProgressBarStyle.Continuous;
+            scanBar.Value = percent;
+            double seconds = phase.Clock.Elapsed.TotalSeconds;
+            string time = done > 0 && done < phase.Total && seconds >= 1
+                ? "About " + Duration(seconds * (phase.Total - done) / done) + " left in this step"
+                : "Elapsed " + Duration(Math.Floor(elapsed.TotalSeconds));
+            status.Text = string.Format("{0}   ·   {1:N0} / {2:N0}   ({3}%)   ·   {4}", phase.Name, done, phase.Total, percent, time);
+        }
+
         private async Task ScanAsync()
         {
             ResetResults();
@@ -172,12 +203,21 @@ namespace PhotoDuplicateFinder
             string root = folder.Text;
             bool includeSubfolders = recursive.Checked;
             bool visual = mode.SelectedIndex == 1;
-            status.Text = visual ? "Comparing image content across resolutions…" : "Scanning photos and comparing file contents…";
+            var progress = new ScanProgress();
+            var elapsed = Stopwatch.StartNew();
+            var timer = new System.Windows.Forms.Timer { Interval = 250 };
+            timer.Tick += delegate { ShowScanProgress(progress.Current, elapsed.Elapsed); };
+            scanBar.Value = 0;
+            scanBar.Visible = true;
+            ShowScanProgress(progress.Current, elapsed.Elapsed);
+            timer.Start();
             RefreshActions();
             try
             {
-                var found = await Task.Run(() => PhotoScanner.ScanFolder(root, includeSubfolders, visual, token), token);
+                var found = await Task.Run(() => PhotoScanner.ScanFolder(root, includeSubfolders, visual, token, progress), token);
                 token.ThrowIfCancellationRequested();
+                var display = progress.Begin("Loading results", found.Groups.Sum(g => g.Paths.Count));
+                var lastYield = Stopwatch.StartNew();
                 bulk = true;
                 files.BeginUpdate();
                 try
@@ -195,6 +235,13 @@ namespace PhotoDuplicateFinder
                             row.SubItems.Add(visual ? match.Versions[path].Resolution : "");
                             row.SubItems.Add(Path.GetDirectoryName(path));
                             files.Items.Add(row);
+                            display.Advance();
+                            if (lastYield.ElapsedMilliseconds >= 75)
+                            {
+                                await Task.Yield();
+                                token.ThrowIfCancellationRequested();
+                                lastYield.Restart();
+                            }
                         }
                     }
                 }
@@ -204,11 +251,15 @@ namespace PhotoDuplicateFinder
                     : string.Format("Photos scanned: {0}    Duplicate groups: {1}    Extra copies: {2}    Skipped entries: {3}",
                         found.Photos, found.Groups.Count, found.Groups.Sum(g => g.Paths.Count - 1), found.Skipped);
                 if (files.Items.Count > 0) files.Items[0].Selected = true;
+                status.Text += "    Elapsed: " + Duration(Math.Floor(elapsed.Elapsed.TotalSeconds));
             }
-            catch (OperationCanceledException) { status.Text = "Scan canceled."; }
+            catch (OperationCanceledException) { ResetResults(); status.Text = "Scan canceled."; }
             catch (Exception ex) { status.Text = "Scan failed. " + ex.Message; }
             finally
             {
+                timer.Stop();
+                timer.Dispose();
+                scanBar.Visible = false;
                 cancellation.Dispose();
                 cancellation = null;
                 working = false;

@@ -37,6 +37,7 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="PhotoScanner.cs" />
+    <Compile Include="ScanProgress.cs" />
     <Compile Include="VisualMatcher.cs" />
     <Compile Include="CompareForm.cs" />
     <Compile Include="RecycleBin.cs" />
